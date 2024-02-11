@@ -1,0 +1,189 @@
+#include <SoftwareSerial.h>
+SoftwareSerial gprsSerial(2, 4);
+
+#include <String.h>
+#include <DHT.h>
+#include <Wire.h>
+#include <avr/wdt.h>//for watchdog restart on error
+
+//Current sensor
+#define senseIn A3 //ACS758 PIN
+int miliVoltsPerAmp = 20;//50A-Bidirectional =40
+                          // 50A Unidirectional =60
+                           //100A Bidirectional =20
+                           //100A Unidirectional =40
+                           //150A Bidirectional =13.3
+                           //150A Unidirectional =26.7
+                           //200A Bidirectional =10
+                           //200A Unidirectional =20
+int acOffset = 2500;//if Unidirectional =600
+                      //if Bidirectional = 2500
+int rawSense =0;
+double voltageValue = 0;
+double Current_Value0 = 0;
+
+//Solar panel Voltage
+float R1 = 200000.0; // resistance of R1 (200K) -see text!
+float R2 = 2000.0; // resistance of R2 (2K) - see text!
+int Value0 = A1;
+float analogInput0  = A1;//read input solar voltage
+float vout0 = 0.0;
+float vin0 = 0.0;
+const float Power_Value0 = 0.00;
+
+
+#define DHTPIN 9  //DHT Sensor
+
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHT22);
+
+#define MOISTURE_PIN A0     // Analog pin for soil moisture sensor
+
+#define APN "web.gprs.mtnnigeria.net"     // Access Point Name for your SIM card
+//#define GPRS_USER "user"   // GPRS user
+//#define GPRS_PASS "pass"   // GPRS password
+#define API_KEY "P88RY0ZX6JUDL71G" // ThingSpeak API key
+
+void setup() {
+  gprsSerial.begin(9600);  // the GPRS baud rate
+  Serial.begin(9600);      // the GPRS baud rate
+  dht.begin();
+  int soilMoisture = analogRead(MOISTURE_PIN);
+  pinMode(A3, INPUT);
+  pinMode(A1, INPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+
+ //wdt_enable(WDTO_8S);
+  //wdt_reset();
+  //while (1); //Watchdog timer should get triggered here
+
+  delay(1000);
+}
+
+void loop() {
+  //wdt_enable(WDTO_8S);
+
+digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
+  delay(1000);                      // wait for a second
+  digitalWrite(LED_BUILTIN, LOW);   // turn the LED off by making the voltage LOW
+  delay(1000);  
+
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+  int soilMoisture = analogRead(MOISTURE_PIN);
+
+
+  delay(15000); // Adjust the delay based on your ThingSpeak update rate
+
+  Serial.print("Temperature = ");
+  Serial.print(t);
+  Serial.println(" °C");
+  Serial.print("Humidity = ");
+  Serial.print(h);
+  Serial.println(" %");
+  Serial.print("Soil Moisture =");
+  Serial.print(soilMoisture);
+  Serial.println("%");
+  Serial.print("PV Voltage=");
+  Serial.print(vin0);
+  Serial.println("V");
+  Serial.print("PV Current=");
+  Serial.print(Current_Value0);
+  Serial.println("A");
+  Serial.print("PV POWER=");
+  Serial.print(Power_Value0);
+  Serial.println("W");
+
+
+  rawSense = analogRead(senseIn);
+    voltageValue = (rawSense / 1023.0) * 5000;
+    Current_Value0 = ((voltageValue - acOffset)/miliVoltsPerAmp);
+
+
+
+      float Value0 = analogRead(A1);
+      const float Power_Value0 = vin0 * (Current_Value0);
+      Value0 = analogRead(analogInput0);
+        vout0 = (Value0 * 5.0) / 1023.0; // see text
+        vin0 = vout0 / (R2 / (R1 + R2));
+        if (vin0 < 0.09) {
+          vin0 = 0.0; //statement to quash undesired reading !
+
+
+  if (gprsSerial.available())
+    Serial.write(gprsSerial.read());
+
+  gprsSerial.println("AT");
+  delay(1000);
+
+  gprsSerial.println("AT+CPIN?");
+  delay(1000);
+
+  gprsSerial.println("AT+CREG?");
+  delay(1000);
+
+  gprsSerial.println("AT+CGATT?");
+  delay(1000);
+
+  gprsSerial.println("AT+CIPSHUT");
+  delay(1000);
+
+  gprsSerial.println("AT+CIPSTATUS");
+  delay(2000);
+
+  gprsSerial.println("AT+CIPMUX=0");
+  delay(2000);
+        }
+  ShowSerialData();
+
+  gprsSerial.println("AT+CSTT=\"web.gprs.mtnnigeria.net\"");  //start task and setting the APN,
+  delay(1000);
+
+  ShowSerialData();
+
+  gprsSerial.println("AT+CIICR");  //bring up wireless connection
+  delay(3000);
+
+  ShowSerialData();
+
+  gprsSerial.println("AT+CIFSR");  //get local IP adress
+  delay(2000);
+
+  ShowSerialData();
+
+  gprsSerial.println("AT+CIPSPRT=0");
+  delay(3000);
+
+  ShowSerialData();
+
+  gprsSerial.println("AT+CIPSTART=\"TCP\",\"api.thingspeak.com\",\"80\"");  //start up the connection
+  delay(6000);
+
+  ShowSerialData();
+
+  gprsSerial.println("AT+CIPSEND");  //begin send data to remote server
+  delay(4000);
+  ShowSerialData();
+
+  String str = "GET https://api.thingspeak.com/update?api_key=P88RY0ZX6JUDL71G&field4=" + String(t) + "&field5=" + String(h) + "&field1=" + String(soilMoisture) + "&field2=" + String(vin0) +"&field3=" + String(Current_Value0) + "&field6=" + String(Power_Value0);
+  Serial.println(str);
+  gprsSerial.println(str);  //begin send data to remote server
+
+  delay(4000);
+  ShowSerialData();
+
+  gprsSerial.println((char)26);  //sending
+  delay(5000);                   //waitting for reply, important! the time is base on the condition of internet
+  gprsSerial.println();
+
+  ShowSerialData();
+
+  gprsSerial.println("AT+CIPSHUT");  //close the connection
+  delay(100);
+  ShowSerialData();
+}
+void ShowSerialData() {
+  while (gprsSerial.available() != 0)
+    Serial.write(gprsSerial.read());
+  delay(5000);
+}
