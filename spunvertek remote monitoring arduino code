@@ -1,3 +1,6 @@
+//this code was written and complile by Matthias Ameh, Founder and CTO of Spunvertek Limited. 
+//this code is for remote monitoring of their various Stand-alone Solar Water pumping system in Nigeria
+
 #include <SoftwareSerial.h>
 SoftwareSerial gprsSerial(2, 4);
 
@@ -42,7 +45,7 @@ DHT dht(DHTPIN, DHT22);
 #define APN "web.gprs.mtnnigeria.net"     // Access Point Name for your SIM card
 //#define GPRS_USER "user"   // GPRS user
 //#define GPRS_PASS "pass"   // GPRS password
-#define API_KEY "P88RY0ZX6JUDL71G" // ThingSpeak API key
+#define API_KEY "xxxxxxxxxxxx" // ThingSpeak API key
 
 void setup() {
   gprsSerial.begin(9600);  // the GPRS baud rate
@@ -165,7 +168,7 @@ digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
   delay(4000);
   ShowSerialData();
 
-  String str = "GET https://api.thingspeak.com/update?api_key=P88RY0ZX6JUDL71G&field4=" + String(t) + "&field5=" + String(h) + "&field1=" + String(soilMoisture) + "&field2=" + String(vin0) +"&field3=" + String(Current_Value0) + "&field6=" + String(Power_Value0);
+  String str = "GET https://api.thingspeak.com/update?api_key=xxxxxxxxxxxx&field4=" + String(t) + "&field5=" + String(h) + "&field1=" + String(soilMoisture) + "&field2=" + String(vin0) +"&field3=" + String(Current_Value0) + "&field6=" + String(Power_Value0);
   Serial.println(str);
   gprsSerial.println(str);  //begin send data to remote server
 
