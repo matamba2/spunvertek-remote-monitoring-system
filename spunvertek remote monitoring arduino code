@@ -1,51 +1,69 @@
-//this code was written and complile by Matthias Ameh, Founder and CTO of Spunvertek Limited. 
+//this code was written and complile on 12/02/2024 by Matthias Ameh, Founder and CTO of Spunvertek Limited.
 //this code is for remote monitoring of their various Stand-alone Solar Water pumping system in Nigeria
 
 #include <SoftwareSerial.h>
-SoftwareSerial gprsSerial(2, 4);
+SoftwareSerial gprsSerial(4, 2);
+
+#include "ThingSpeak.h"
 
 #include <String.h>
 #include <DHT.h>
 #include <Wire.h>
-#include <avr/wdt.h>//for watchdog restart on error
+#include <avr/wdt.h>  //for watchdog restart on error
 
+//----------------------------------------Channel ID on ThingSpeak
+unsigned long channel = xxxxxxx;
+const char* THINGSPEAKURL = "https://api.thingspeak.com/channels/xxxxxxx/fields/1.json?api_key=xxxxxxxxxxxxxxxx";
+
+//----------------------------------------Declaration field1, I use field1 for light / relay, if you use many fields, add field1, field2, and so on.
+unsigned int field7 = 1;
+//unsigned int field6 = 0;
+//unsigned int field5 = 0;
+//unsigned int field4 = 0;
+//unsigned int field3 = 0;
+//unsigned int field2 = 0;
+//unsigned int field1 = 0;
 //Current sensor
-#define senseIn A3 //ACS758 PIN
-int miliVoltsPerAmp = 20;//50A-Bidirectional =40
-                          // 50A Unidirectional =60
-                           //100A Bidirectional =20
+#define senseIn A3         //ACS758 PIN
+int miliVoltsPerAmp = 20;  //50A-Bidirectional =40
+                           // 50A Unidirectional =60
+                           //100B Bidirectional =20
                            //100A Unidirectional =40
                            //150A Bidirectional =13.3
                            //150A Unidirectional =26.7
                            //200A Bidirectional =10
                            //200A Unidirectional =20
-int acOffset = 2500;//if Unidirectional =600
-                      //if Bidirectional = 2500
-int rawSense =0;
+int acOffset = 2500;       //if Unidirectional =600
+                           //if Bidirectional = 2500
+int rawSense = 0;
 double voltageValue = 0;
 double Current_Value0 = 0;
 
 //Solar panel Voltage
-float R1 = 200000.0; // resistance of R1 (200K) -see text!
-float R2 = 2000.0; // resistance of R2 (2K) - see text!
+float R1 = 200000.0;  // resistance of R1 (200K) -see text!
+float R2 = 2000.0;    // resistance of R2 (2K) - see text!
 int Value0 = A1;
-float analogInput0  = A1;//read input solar voltage
+float analogInput0 = A1;  //read input solar voltage
 float vout0 = 0.0;
 float vin0 = 0.0;
-const float Power_Value0 = 0.00;
-
-
-#define DHTPIN 9  //DHT Sensor
+float Power_Value0 = 0.00;
+float FlowRate = 0.00;
+float maxWattage = 2200.0;    // Maximum wattage (W) for known flow rate
+float maxFlowRate = 1100.0;   // Maximum flow rate (L/m) at max wattage
+float last_relay_state = 0;
+#define DHTPIN 9     //DHT Sensor
+#define RELAY_PIN 6  // FOR REMOTE TURN OFF AND ON OF SOLAR PUMP
 
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHT22);
 
-#define MOISTURE_PIN A0     // Analog pin for soil moisture sensor
+#define MOISTURE_PIN A0  // Analog pin for soil moisture sensor
 
-#define APN "web.gprs.mtnnigeria.net"     // Access Point Name for your SIM card
-//#define GPRS_USER "user"   // GPRS user
-//#define GPRS_PASS "pass"   // GPRS password
-#define API_KEY "xxxxxxxxxxxx" // ThingSpeak API key
+#define APN "internet.ng.airtel.com"  // Access Point Name for your SIM card
+#define GPRS_USER "internet"          // GPRS user
+#define GPRS_PASS "internet"          // GPRS password
+#define API_KEY "C3A3VWLHA2VGQBN3"    // ThingSpeak API key
+
 
 void setup() {
   gprsSerial.begin(9600);  // the GPRS baud rate
@@ -55,28 +73,52 @@ void setup() {
   pinMode(A3, INPUT);
   pinMode(A1, INPUT);
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(RELAY_PIN, OUTPUT);    //Relay port Direction output
+  digitalWrite(RELAY_PIN, LOW);  //--> Turn off Relay/Relay use active high, some relay modules may be different.
 
- //wdt_enable(WDTO_8S);
+  //wdt_enable(WDTO_8S);
   //wdt_reset();
   //while (1); //Watchdog timer should get triggered here
 
+  delay(1000);
+
+  // Initialize SIM800 module
+  gprsSerial.println("AT");
+  delay(1000);
+
+  // Check if SIM800 module is ready
+  gprsSerial.println("AT+CPIN?");
+  delay(1000);
+
+  // Enable GPRS
+  gprsSerial.println("AT+CGATT=1");
+  delay(1000);
+
+  // Check if connected to the internet
+  gprsSerial.println("AT+CGACT?");
+  delay(1000);
+
+  // Check if GPRS is connected
+  gprsSerial.println("AT+SAPBR=2,1");
   delay(1000);
 }
 
 void loop() {
   //wdt_enable(WDTO_8S);
 
-digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
+  digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
   delay(1000);                      // wait for a second
   digitalWrite(LED_BUILTIN, LOW);   // turn the LED off by making the voltage LOW
-  delay(1000);  
+  delay(1000);
 
   float h = dht.readHumidity();
   float t = dht.readTemperature();
   int soilMoisture = analogRead(MOISTURE_PIN);
+  int moisturePercentage = map(soilMoisture, 0, 1023, 0, 100);
 
 
-  delay(15000); // Adjust the delay based on your ThingSpeak update rate
+
+  delay(15000);  // Adjust the delay based on your ThingSpeak update rate
 
   Serial.print("Temperature = ");
   Serial.print(t);
@@ -85,7 +127,7 @@ digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
   Serial.print(h);
   Serial.println(" %");
   Serial.print("Soil Moisture =");
-  Serial.print(soilMoisture);
+  Serial.print(moisturePercentage);
   Serial.println("%");
   Serial.print("PV Voltage=");
   Serial.print(vin0);
@@ -96,50 +138,55 @@ digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
   Serial.print("PV POWER=");
   Serial.print(Power_Value0);
   Serial.println("W");
+  Serial.print("Volume Of Water=");
+  Serial.print(FlowRate);
+  Serial.println("L/M");
 
 
   rawSense = analogRead(senseIn);
-    voltageValue = (rawSense / 1023.0) * 5000;
-    Current_Value0 = ((voltageValue - acOffset)/miliVoltsPerAmp);
+  voltageValue = (rawSense / 1023.0) * 5000;
+  Current_Value0 = -((voltageValue - acOffset) / miliVoltsPerAmp);
 
 
+  FlowRate = ((Power_Value0 / maxWattage) * maxFlowRate);
+  float Value0 = analogRead(A1);
+  Power_Value0 = (vin0 * (Current_Value0));
+  Value0 = analogRead(analogInput0);
+  vout0 = (Value0 * 5.0) / 1023.0;  // see text
+  vin0 = vout0 / (R2 / (R1 + R2));
+  if (vin0 < 0.09) {
+    vin0 = 0.0;  //statement to quash undesired reading !
 
-      float Value0 = analogRead(A1);
-      const float Power_Value0 = vin0 * (Current_Value0);
-      Value0 = analogRead(analogInput0);
-        vout0 = (Value0 * 5.0) / 1023.0; // see text
-        vin0 = vout0 / (R2 / (R1 + R2));
-        if (vin0 < 0.09) {
-          vin0 = 0.0; //statement to quash undesired reading !
+  }
 
+    if (gprsSerial.available())
+      Serial.write(gprsSerial.read());
 
-  if (gprsSerial.available())
-    Serial.write(gprsSerial.read());
+    gprsSerial.println("AT");
+    delay(1000);
 
-  gprsSerial.println("AT");
-  delay(1000);
+    gprsSerial.println("AT+CPIN?");
+    delay(1000);
 
-  gprsSerial.println("AT+CPIN?");
-  delay(1000);
+    gprsSerial.println("AT+CREG?");
+    delay(1000);
 
-  gprsSerial.println("AT+CREG?");
-  delay(1000);
+    gprsSerial.println("AT+CGATT?");
+    delay(1000);
 
-  gprsSerial.println("AT+CGATT?");
-  delay(1000);
+    gprsSerial.println("AT+CIPSHUT");
+    delay(1000);
 
-  gprsSerial.println("AT+CIPSHUT");
-  delay(1000);
+    gprsSerial.println("AT+CIPSTATUS");
+    delay(2000);
 
-  gprsSerial.println("AT+CIPSTATUS");
-  delay(2000);
+    gprsSerial.println("AT+CIPMUX=0");
+    delay(2000);
+  
 
-  gprsSerial.println("AT+CIPMUX=0");
-  delay(2000);
-        }
-  ShowSerialData();
+ShowSerialData();
 
-  gprsSerial.println("AT+CSTT=\"web.gprs.mtnnigeria.net\"");  //start task and setting the APN,
+  gprsSerial.println("AT+CSTT=\"internet.ng.airtel.com\"");  //start task and setting the APN,
   delay(1000);
 
   ShowSerialData();
@@ -165,18 +212,18 @@ digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
   ShowSerialData();
 
   gprsSerial.println("AT+CIPSEND");  //begin send data to remote server
-  delay(4000);
+  delay(8000);
   ShowSerialData();
 
-  String str = "GET https://api.thingspeak.com/update?api_key=xxxxxxxxxxxx&field4=" + String(t) + "&field5=" + String(h) + "&field1=" + String(soilMoisture) + "&field2=" + String(vin0) +"&field3=" + String(Current_Value0) + "&field6=" + String(Power_Value0);
+  String str = "GET https://api.thingspeak.com/update?api_key=xxxxxxxxxxxxxxxx&field4=" + String(t) + "&field5=" + String(h) + "&field1=" + String(moisturePercentage) + "&field2=" + String(vin0) + "&field3=" + String(Current_Value0) + "&field6=" + String(Power_Value0) + "&field7=" + String(last_relay_state) + "&field8=" + String(FlowRate);
   Serial.println(str);
   gprsSerial.println(str);  //begin send data to remote server
 
-  delay(4000);
+  delay(9000);
   ShowSerialData();
 
   gprsSerial.println((char)26);  //sending
-  delay(5000);                   //waitting for reply, important! the time is base on the condition of internet
+  delay(10000);                  //waitting for reply, important! the time is base on the condition of internet
   gprsSerial.println();
 
   ShowSerialData();
@@ -184,7 +231,52 @@ digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
   gprsSerial.println("AT+CIPSHUT");  //close the connection
   delay(100);
   ShowSerialData();
+
+  int statusCode = 0;
+
+  int last_relay_state = checkThingSpeak();   // Check ThingSpeak status;  //--> get the latest data from the fields on ThingSpeak
+
+  if (last_relay_state == 1) {
+    digitalWrite(RELAY_PIN, HIGH);      // Turn relay ON
+  } else if (last_relay_state == 0) {
+    digitalWrite(RELAY_PIN, LOW);       // Turn relay OFF
+  }
+
+  delay(15000);                         // Wait 15 seconds before next request
 }
+
+int checkThingSpeak() {
+  String url = "THINGSPEAKURL";
+
+    // Start HTTP GET request 
+    
+    gprsSerial.println("AT+HTTPINIT");
+  delay(1000);
+
+  gprsSerial.println("AT+HTTPPARA=\"CID\",1");
+  delay(1000);
+  gprsSerial.println("AT+HTTPPARA=\"URL\",\"" + url + "\"");
+  delay(1000);
+  gprsSerial.println("AT+HTTPACTION=0");
+  delay(5000);
+
+
+  // Read response
+  String response = "";
+  while (gprsSerial.available()) {
+    response += char(gprsSerial.read());
+  }
+  gprsSerial.println("AT+HTTPTERM");
+
+  // Parse field1 value from response
+  int fieldValue = -1;
+  int index = response.indexOf("\"field7\":\"");
+  if (index != -1) {
+    fieldValue = response.substring(index + 9, index + 10).toInt();
+  }
+  return fieldValue;
+}
+
 void ShowSerialData() {
   while (gprsSerial.available() != 0)
     Serial.write(gprsSerial.read());
